@@ -194,13 +194,19 @@ def compact_transcript(lines: list[TranscriptLine]) -> str:
     )
 
 
-def build_prompt(transcript: str, video_title: str, requested_count: int, max_duration: int) -> str:
+def build_prompt(
+    transcript: str,
+    video_title: str,
+    requested_count: int,
+    min_duration: int,
+    max_duration: int,
+) -> str:
     return f"""You are an expert short-form video editor. Analyze this YouTube transcript and find the strongest self-contained moments for TikTok, Instagram Reels, and YouTube Shorts.
 
 Video title: {video_title}
-Return exactly {requested_count} ranked candidates if the transcript contains enough strong moments. Each clip should normally be {max_duration} seconds or less, but may be shorter when a punchline or reveal is complete.
+Return exactly {requested_count} ranked candidates if the transcript contains enough strong moments. Every clip MUST be at least {min_duration} seconds and no longer than {max_duration} seconds. Never return a 2–5 second fragment, a single sentence without context, or an isolated phrase. If there are not enough strong moments, return fewer clips rather than short fragments.
 
-A good clip has: a hook in the first 1-3 seconds, a clear idea or conflict, a satisfying payoff/reaction, and enough context to stand alone. Prioritize surprising claims, controversy, emotional stories, strong opinions, jokes, reveals, arguments, practical advice, and moments that will generate comments. Do not invent words or topics that are absent from the transcript. Timestamps must fall inside the transcript.
+A good clip has: a hook in the first 1-3 seconds, a clear idea or conflict, a satisfying payoff/reaction, and enough context to stand alone. Include the setup before the hook and the reaction, conclusion, or payoff after it. Prioritize surprising claims, controversy, emotional stories, strong opinions, jokes, reveals, arguments, practical advice, and moments that will generate comments. Do not invent words or topics that are absent from the transcript. Timestamps must fall inside the transcript.
 
 Output JSON only in this shape:
 {{
@@ -231,6 +237,7 @@ def analyze_transcript(
     transcript: str,
     title: str,
     count: int,
+    min_duration: int,
     max_duration: int,
     model: str,
     provider: str,
@@ -256,7 +263,7 @@ def analyze_transcript(
                 "role": "system",
                 "content": "You select precise, factual short-form video moments. Output valid JSON only.",
             },
-            {"role": "user", "content": build_prompt(transcript, title, count, max_duration)},
+            {"role": "user", "content": build_prompt(transcript, title, count, min_duration, max_duration)},
         ],
         max_completion_tokens=6000,
         response_format={"type": "json_object"},
@@ -265,7 +272,13 @@ def analyze_transcript(
     return json.loads(content)
 
 
-def normalize_clips(data: dict[str, Any], transcript_duration: float, video_duration: float | None) -> list[dict[str, Any]]:
+def normalize_clips(
+    data: dict[str, Any],
+    transcript_duration: float,
+    video_duration: float | None,
+    min_duration: int,
+    max_duration: int,
+) -> list[dict[str, Any]]:
     clips: list[dict[str, Any]] = []
     upper_bound = video_duration or transcript_duration
     for index, raw in enumerate(data.get("clips", []), start=1):
@@ -274,7 +287,8 @@ def normalize_clips(data: dict[str, Any], transcript_duration: float, video_dura
             end = min(upper_bound, parse_time(raw.get("end", start)))
         except (TypeError, ValueError):
             continue
-        if end <= start or end - start < 2:
+        clip_length = end - start
+        if end <= start or clip_length < min_duration or clip_length > max_duration + 2:
             continue
         item = dict(raw)
         item["rank"] = len(clips) + 1
@@ -321,8 +335,9 @@ with st.sidebar:
         model = st.text_input("AI model", value=DEFAULT_MODEL)
         st.caption("OPENAI_API_KEY .env file mein add karein.")
     count = st.slider("Kitne clips chahiye?", min_value=3, max_value=15, value=8)
-    max_duration = st.slider("Maximum clip duration (seconds)", min_value=15, max_value=120, value=90, step=5)
-    st.info("Tool transcript-based analysis karta hai. Final export se pehle 5–10 seconds ka context editor mein verify karein.")
+    min_duration = st.slider("Minimum clip duration (seconds)", min_value=15, max_value=60, value=30, step=5)
+    max_duration = st.slider("Maximum clip duration (seconds)", min_value=30, max_value=180, value=90, step=5)
+    st.info("Tool complete hook + discussion + payoff wale clips select karta hai. Final export se pehle 5–10 seconds ka context editor mein verify karein.")
 
 url = st.text_input("YouTube URL", placeholder="https://www.youtube.com/watch?v=...")
 run = st.button("Find Best Timestamps", type="primary", use_container_width=True)
@@ -341,8 +356,8 @@ if run:
             transcript = compact_transcript(lines)
             transcript_duration = max(line.end for line in lines)
             st.write("AI strong moments select kar raha hai...")
-            raw_result = analyze_transcript(transcript, title, count, max_duration, model, provider)
-            clips = normalize_clips(raw_result, transcript_duration, video_duration)
+            raw_result = analyze_transcript(transcript, title, count, min_duration, max_duration, model, provider)
+            clips = normalize_clips(raw_result, transcript_duration, video_duration, min_duration, max_duration)
             status.update(label="Analysis complete", state="complete")
 
         if not clips:
