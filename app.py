@@ -15,6 +15,8 @@ load_dotenv()
 
 APP_TITLE = "Clip Finder — Best YouTube Timestamps"
 DEFAULT_MODEL = os.getenv("CLIP_FINDER_MODEL", "gpt-5-mini")
+NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
+NVIDIA_DEFAULT_MODEL = os.getenv("NVIDIA_MODEL", "meta/llama-3.1-70b-instruct")
 
 
 @dataclass
@@ -225,14 +227,26 @@ Transcript:
 """
 
 
-def analyze_transcript(transcript: str, title: str, count: int, max_duration: int, model: str) -> dict[str, Any]:
-    api_key = os.getenv("OPENAI_API_KEY")
+def analyze_transcript(
+    transcript: str,
+    title: str,
+    count: int,
+    max_duration: int,
+    model: str,
+    provider: str,
+) -> dict[str, Any]:
+    if provider == "NVIDIA NIM":
+        api_key = os.getenv("NVIDIA_API_KEY")
+        base_url = NVIDIA_BASE_URL
+        key_name = "NVIDIA_API_KEY"
+    else:
+        api_key = os.getenv("OPENAI_API_KEY")
+        base_url = os.getenv("OPENAI_API_BASE")
+        key_name = "OPENAI_API_KEY"
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY set nahi hai. .env file mein apni API key add karein.")
+        raise RuntimeError(f"{key_name} set nahi hai. .env file mein apni API key add karein.")
 
-    client_kwargs: dict[str, Any] = {"api_key": api_key}
-    if os.getenv("OPENAI_API_BASE"):
-        client_kwargs["base_url"] = os.getenv("OPENAI_API_BASE")
+    client_kwargs: dict[str, Any] = {"api_key": api_key, "base_url": base_url}
     client = OpenAI(**client_kwargs)
 
     response = client.chat.completions.create(
@@ -299,7 +313,13 @@ st.caption("YouTube link paste karein — best short-form timestamps, hooks aur 
 
 with st.sidebar:
     st.header("Settings")
-    model = st.text_input("AI model", value=DEFAULT_MODEL)
+    provider = st.selectbox("AI provider", ["OpenAI-compatible", "NVIDIA NIM"])
+    if provider == "NVIDIA NIM":
+        model = st.text_input("NVIDIA model", value=NVIDIA_DEFAULT_MODEL)
+        st.caption("NVIDIA_API_KEY .env file mein add karein.")
+    else:
+        model = st.text_input("AI model", value=DEFAULT_MODEL)
+        st.caption("OPENAI_API_KEY .env file mein add karein.")
     count = st.slider("Kitne clips chahiye?", min_value=3, max_value=15, value=8)
     max_duration = st.slider("Maximum clip duration (seconds)", min_value=15, max_value=120, value=90, step=5)
     st.info("Tool transcript-based analysis karta hai. Final export se pehle 5–10 seconds ka context editor mein verify karein.")
@@ -321,7 +341,7 @@ if run:
             transcript = compact_transcript(lines)
             transcript_duration = max(line.end for line in lines)
             st.write("AI strong moments select kar raha hai...")
-            raw_result = analyze_transcript(transcript, title, count, max_duration, model)
+            raw_result = analyze_transcript(transcript, title, count, max_duration, model, provider)
             clips = normalize_clips(raw_result, transcript_duration, video_duration)
             status.update(label="Analysis complete", state="complete")
 

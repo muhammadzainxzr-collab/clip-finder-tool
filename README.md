@@ -56,6 +56,19 @@ CLIP_FINDER_MODEL=gpt-5-mini
 
 For the official OpenAI API, leave `OPENAI_API_BASE` blank. For another OpenAI-compatible provider, set its base URL as documented by that provider.
 
+## NVIDIA NIM / Meta Llama 3.1 70B
+
+The sidebar includes an **NVIDIA NIM** provider option. NVIDIA documents an OpenAI-compatible chat-completions endpoint at `https://integrate.api.nvidia.com/v1`, and the Llama 3.1 70B Instruct model is available with the model ID `meta/llama-3.1-70b-instruct`.
+
+Add this to `.env`:
+
+```env
+NVIDIA_API_KEY=your_nvidia_api_key_here
+NVIDIA_MODEL=meta/llama-3.1-70b-instruct
+```
+
+Get the key from [NVIDIA Build](https://build.nvidia.com/). Start the app, choose **NVIDIA NIM** in the left sidebar, keep the default model, paste a YouTube link, and click **Find Best Timestamps**. The tool uses the same transcript and timestamp workflow; only the AI provider changes.
+
 ## How to use
 
 Open the local URL shown by Streamlit, usually `http://localhost:8501`, paste a YouTube link, choose the number of clips and maximum duration, then click **Find Best Timestamps**.
